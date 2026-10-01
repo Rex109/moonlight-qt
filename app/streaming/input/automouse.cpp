@@ -105,8 +105,10 @@ void SdlInputHandler::getWindowScreenRect(SDL_Rect* rect, int margin)
 
 bool SdlInputHandler::isCursorOverWindow(int globalX, int globalY)
 {
-    // While we're capturing the mouse, the cursor is by definition ours
-    if (isCaptureActive()) {
+    // While SDL has the cursor locked to our focused window, it's by definition ours. Don't use
+    // isCaptureActive() here: in absolute mouse mode it stays true even after the cursor
+    // leaves the window or the window loses focus.
+    if (SDL_GetRelativeMouseMode() && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS)) {
         return true;
     }
 
