@@ -8,7 +8,7 @@
 #include <atomic>
 
 // Toggles the auto mouse feature. This key is never forwarded to the host.
-#define AUTO_MOUSE_TOGGLE_SCANCODE SDL_SCANCODE_SCROLLLOCK
+#define AUTO_MOUSE_TOGGLE_SCANCODE SDL_SCANCODE_HOME
 
 #define SDL_CODE_AUTOMOUSE_TICK 106
 
