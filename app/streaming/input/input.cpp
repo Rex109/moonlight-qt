@@ -237,6 +237,7 @@ SdlInputHandler::~SdlInputHandler()
     SDL_RemoveTimer(m_LeftButtonReleaseTimer);
     SDL_RemoveTimer(m_RightButtonReleaseTimer);
     SDL_RemoveTimer(m_DragTimer);
+    SDL_RemoveTimer(m_AutoMouseTimer);
 
 #if !SDL_VERSION_ATLEAST(2, 0, 9)
     SDL_QuitSubSystem(SDL_INIT_HAPTIC);

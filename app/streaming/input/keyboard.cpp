@@ -189,6 +189,14 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
     char flags;
     bool shouldNotConvertToScanCodeOnServer = false;
 
+    // The auto mouse toggle is handled locally and never sent to the host
+    if (event->keysym.scancode == AUTO_MOUSE_TOGGLE_SCANCODE) {
+        if (event->state == SDL_PRESSED && !event->repeat) {
+            toggleAutoMouse();
+        }
+        return;
+    }
+
     if (event->repeat) {
         // Ignore repeat key down events
         SDL_assert(event->state == SDL_PRESSED);

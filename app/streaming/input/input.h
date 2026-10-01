@@ -5,6 +5,13 @@
 
 #include "SDL_compat.h"
 
+#include <atomic>
+
+// Toggles the auto mouse feature. This key is never forwarded to the host.
+#define AUTO_MOUSE_TOGGLE_SCANCODE SDL_SCANCODE_SCROLLLOCK
+
+#define SDL_CODE_AUTOMOUSE_TICK 106
+
 struct GamepadState {
     SDL_GameController* controller;
     SDL_JoystickID jsId;
@@ -140,6 +147,10 @@ public:
 
     void notifyFocusGained();
 
+    void toggleAutoMouse();
+
+    void autoMouseTick();
+
     bool isCaptureActive();
 
     bool isSystemKeyCaptureActive();
@@ -187,6 +198,17 @@ private:
     void handleRelativeFingerEvent(SDL_TouchFingerEvent* event);
 
     void performSpecialKeyCombo(KeyCombo combo);
+
+    void getWindowScreenRect(SDL_Rect* rect, int margin);
+
+    bool isCursorOverWindow(int globalX, int globalY);
+
+    void getAutoMousePoint(double progress, double* x, double* y);
+
+    bool planAutoMouseMove(int globalX, int globalY, Uint32 now);
+
+    static
+    Uint32 autoMouseTimerCallback(Uint32 interval, void* param);
 
     static
     Uint32 longPressTimerCallback(Uint32 interval, void* param);
@@ -249,6 +271,25 @@ private:
     SDL_TimerID m_DragTimer;
     char m_DragButton;
     int m_NumFingersDown;
+
+    // Auto mouse: wanders the real cursor around while it's outside our window
+    bool m_AutoMouseEnabled = false;
+    SDL_TimerID m_AutoMouseTimer = 0;
+    std::atomic<bool> m_AutoMouseTickPending { false };
+    bool m_AutoMouseOverlayVisible = false;
+    Uint32 m_AutoMouseOverlayHideTime = 0;
+    bool m_AutoMouseMoving = false;
+    Uint32 m_AutoMouseNextMoveTime = 0;
+    double m_AutoMouseRemX = 0;
+    double m_AutoMouseRemY = 0;
+    struct {
+        double startX, startY;
+        double endX, endY;
+        double bowX, bowY;
+        double duration;
+        Uint32 startTime;
+        double lastX, lastY;
+    } m_AutoMousePath;
 
     static const int k_ButtonMap[];
 };
