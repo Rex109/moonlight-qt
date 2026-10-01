@@ -19,7 +19,6 @@
 #define AUTO_MOUSE_TICK_MS 8
 #define AUTO_MOUSE_OVERLAY_MS 2000
 #define AUTO_MOUSE_EDGE_MARGIN 20
-#define AUTO_MOUSE_WINDOW_MARGIN 40
 
 static const char* k_AutoMouseOnText = "Auto mouse: ON";
 static const char* k_AutoMouseOffText = "Auto mouse: OFF";
@@ -46,6 +45,8 @@ void SdlInputHandler::toggleAutoMouse()
     m_AutoMouseEnabled = !m_AutoMouseEnabled;
     m_AutoMouseMoving = false;
     m_AutoMouseRemX = m_AutoMouseRemY = 0;
+    m_AutoMouseVirtX = m_StreamWidth / 2.0;
+    m_AutoMouseVirtY = m_StreamHeight / 2.0;
     m_AutoMouseNextMoveTime = SDL_GetTicks() + 300;
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -130,43 +131,28 @@ void SdlInputHandler::getAutoMousePoint(double progress, double* x, double* y)
     *y = m_AutoMousePath.startY + (m_AutoMousePath.endY - m_AutoMousePath.startY) * progress + m_AutoMousePath.bowY * bulge;
 }
 
-bool SdlInputHandler::planAutoMouseMove(int globalX, int globalY, Uint32 now)
+bool SdlInputHandler::planAutoMouseMove(Uint32 now)
 {
-    // Stay on the display the cursor is currently on
-    SDL_Rect bounds = {};
-    bool foundDisplay = false;
-    for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
-        SDL_Rect displayBounds;
-        SDL_Point point = { globalX, globalY };
-        if (SDL_GetDisplayBounds(i, &displayBounds) == 0 && SDL_PointInRect(&point, &displayBounds)) {
-            bounds = displayBounds;
-            foundDisplay = true;
-            break;
-        }
-    }
-    if (!foundDisplay) {
-        return false;
-    }
-
-    SDL_Rect avoidRect;
-    getWindowScreenRect(&avoidRect, AUTO_MOUSE_WINDOW_MARGIN);
-    bool avoidWindow = !(SDL_GetWindowFlags(m_Window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN));
+    // We don't know where the host cursor really is, so we track an estimate of it in
+    // stream coordinates and keep our targets inside the stream area.
+    double curX = m_AutoMouseVirtX;
+    double curY = m_AutoMouseVirtY;
 
     for (int attempt = 0; attempt < 16; attempt++) {
         // Mostly short hops like a person fidgeting, sometimes a long sweep across the screen
         double dist = randRange(0, 1) < 0.7 ? randRange(60, 380) :
-                                              randRange(300, 0.7 * qMax(bounds.w, bounds.h));
+                                              randRange(300, 0.7 * qMax(m_StreamWidth, m_StreamHeight));
         double angle = randRange(0, 2 * M_PI);
 
-        double endX = qBound<double>(bounds.x + AUTO_MOUSE_EDGE_MARGIN,
-                                     globalX + cos(angle) * dist,
-                                     bounds.x + bounds.w - AUTO_MOUSE_EDGE_MARGIN - 1);
-        double endY = qBound<double>(bounds.y + AUTO_MOUSE_EDGE_MARGIN,
-                                     globalY + sin(angle) * dist,
-                                     bounds.y + bounds.h - AUTO_MOUSE_EDGE_MARGIN - 1);
+        double endX = qBound<double>(AUTO_MOUSE_EDGE_MARGIN,
+                                     curX + cos(angle) * dist,
+                                     m_StreamWidth - AUTO_MOUSE_EDGE_MARGIN - 1);
+        double endY = qBound<double>(AUTO_MOUSE_EDGE_MARGIN,
+                                     curY + sin(angle) * dist,
+                                     m_StreamHeight - AUTO_MOUSE_EDGE_MARGIN - 1);
 
-        double dx = endX - globalX;
-        double dy = endY - globalY;
+        double dx = endX - curX;
+        double dy = endY - curY;
         double len = hypot(dx, dy);
         if (len < 40) {
             continue;
@@ -174,32 +160,18 @@ bool SdlInputHandler::planAutoMouseMove(int globalX, int globalY, Uint32 now)
 
         double bow = randRange(-0.12, 0.12) * len;
 
-        m_AutoMousePath.startX = globalX;
-        m_AutoMousePath.startY = globalY;
+        m_AutoMousePath.startX = curX;
+        m_AutoMousePath.startY = curY;
         m_AutoMousePath.endX = endX;
         m_AutoMousePath.endY = endY;
         m_AutoMousePath.bowX = -dy / len * bow;
         m_AutoMousePath.bowY = dx / len * bow;
 
-        // Don't plan a path that would run through our own window
-        bool crossesWindow = false;
-        if (avoidWindow) {
-            for (int k = 0; k <= 24 && !crossesWindow; k++) {
-                double px, py;
-                getAutoMousePoint(k / 24.0, &px, &py);
-                SDL_Point point = { (int)px, (int)py };
-                crossesWindow = SDL_PointInRect(&point, &avoidRect);
-            }
-        }
-        if (crossesWindow) {
-            continue;
-        }
-
         // Fitts's law-like timing: longer movements take longer, but not proportionally
         m_AutoMousePath.duration = (250 + 180 * log2(1 + len / 40)) * randRange(0.85, 1.25);
         m_AutoMousePath.startTime = now;
-        m_AutoMousePath.lastX = globalX;
-        m_AutoMousePath.lastY = globalY;
+        m_AutoMousePath.lastX = curX;
+        m_AutoMousePath.lastY = curY;
         return true;
     }
 
@@ -246,7 +218,7 @@ void SdlInputHandler::autoMouseTick()
             return;
         }
 
-        if (!planAutoMouseMove(globalX, globalY, now)) {
+        if (!planAutoMouseMove(now)) {
             m_AutoMouseNextMoveTime = now + 1000;
             return;
         }
@@ -262,8 +234,7 @@ void SdlInputHandler::autoMouseTick()
     double pathX, pathY;
     getAutoMousePoint(eased, &pathX, &pathY);
 
-    // Apply only the change since the last tick relative to where the cursor is now.
-    // That way the user's own real mouse movement and ours add up instead of fighting.
+    // Send only the change since the last tick as relative motion to the host
     m_AutoMouseRemX += pathX - m_AutoMousePath.lastX;
     m_AutoMouseRemY += pathY - m_AutoMousePath.lastY;
     m_AutoMousePath.lastX = pathX;
@@ -274,11 +245,13 @@ void SdlInputHandler::autoMouseTick()
     if (stepX != 0 || stepY != 0) {
         m_AutoMouseRemX -= stepX;
         m_AutoMouseRemY -= stepY;
-        SDL_WarpMouseGlobal(globalX + stepX, globalY + stepY);
+        LiSendMouseMoveEvent((short)stepX, (short)stepY);
     }
 
     if (t >= 1.0) {
         m_AutoMouseMoving = false;
+        m_AutoMouseVirtX = m_AutoMousePath.endX;
+        m_AutoMouseVirtY = m_AutoMousePath.endY;
 
         // Humans rest between movements for a variable amount of time
         m_AutoMouseNextMoveTime = now + (Uint32)(randRange(0, 1) < 0.15 ? randRange(2000, 5000) :

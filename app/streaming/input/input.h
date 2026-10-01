@@ -205,7 +205,7 @@ private:
 
     void getAutoMousePoint(double progress, double* x, double* y);
 
-    bool planAutoMouseMove(int globalX, int globalY, Uint32 now);
+    bool planAutoMouseMove(Uint32 now);
 
     static
     Uint32 autoMouseTimerCallback(Uint32 interval, void* param);
@@ -272,7 +272,7 @@ private:
     char m_DragButton;
     int m_NumFingersDown;
 
-    // Auto mouse: wanders the real cursor around while it's outside our window
+    // Auto mouse: wanders the remote cursor around while the local cursor is outside our window
     bool m_AutoMouseEnabled = false;
     SDL_TimerID m_AutoMouseTimer = 0;
     std::atomic<bool> m_AutoMouseTickPending { false };
@@ -282,6 +282,8 @@ private:
     Uint32 m_AutoMouseNextMoveTime = 0;
     double m_AutoMouseRemX = 0;
     double m_AutoMouseRemY = 0;
+    double m_AutoMouseVirtX = 0;
+    double m_AutoMouseVirtY = 0;
     struct {
         double startX, startY;
         double endX, endY;
